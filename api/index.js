@@ -22,3 +22,13 @@ app.get('/',(req,res)=>{
 // create seperate folder for apis as it becomes clumsy here
 app.use('/api/user',usertRouter);
 app.use('/api/auth',authRouter);
+//middleware
+app.use((err, req, res, next) => {
+    const statusCode = err.statusCode || 500;
+    const message = err.message || 'Internal Server Error';
+    return res.status(statusCode).json({
+      success: false,
+      statusCode,
+      message,
+    });
+  });
