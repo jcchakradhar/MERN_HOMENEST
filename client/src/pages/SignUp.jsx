@@ -29,22 +29,7 @@ export default function SignUp() {
         },
         body: JSON.stringify(formData),
       });
-          // 👇 Get raw response text (for debugging)
-const rawText = await res.text();
-console.log('🔍 RAW RESPONSE TEXT:', rawText);
-
-// 👇 Try to parse JSON (safely)
-let data;
-try {
-  data = JSON.parse(rawText);
-  console.log('✅ Parsed JSON:', data);
-} catch (err) {
-  console.error('❌ JSON parse error:', err.message);
-  setError('Server response was not valid JSON.');
-  setLoading(false);
-  return;
-}
-      //const data = await res.json();
+      const data = await res.json();
       console.log(data);
       if (data.success === false) {
         setLoading(false);
