@@ -1,6 +1,9 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 export default function Header() {
+    const {currentUser}=useSelector(state=>state.user);
+    //use selector is redux hook to read data from redux store state.user  is stored in current user
   return (
     <header className="bg-blue-200 shadow-xl">
       <div className="flex justify-between items-center max-w-6xl mx-auto p-4">
@@ -28,9 +31,17 @@ export default function Header() {
               About
             </li>
           </Link> 
-          <Link to='/profile'>
-          <li className=' text-slate-700 hover:underline'> Sign in</li>
-          </Link>
+          <Link to={currentUser ? '/profile' : '/sign-in'}>
+  {currentUser ? (
+    <img
+      className='rounded-full h-7 w-7 object-cover'
+      src={currentUser.avatar}
+      alt='profile'
+    />
+  ) : (
+    <li className='text-slate-700 hover:underline'>Sign in</li>
+  )}
+</Link>
         </ul>
       </div>
     </header>

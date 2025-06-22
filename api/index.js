@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import usertRouter from './routes/user.route.js'
 import authRouter from './routes/auth.route.js'
+import cors from 'cors';
 dotenv.config();
 mongoose.connect(process.env.mongo).then(()=>{
     console.log('Connected to MongoDB!!')
@@ -11,6 +12,11 @@ mongoose.connect(process.env.mongo).then(()=>{
 })
 
 const app=express();
+// ✅ This must come before route handlers
+app.use(cors({
+  origin: 'http://localhost:5173', // Replace with your React app's origin
+  credentials: true               // 🔥 Allows cookies to be sent
+}));
 // 🟢 Important: Parse incoming JSON
 app.use(express.json());
 app.listen(3000,()=>{
