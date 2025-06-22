@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import usertRouter from './routes/user.route.js'
 import authRouter from './routes/auth.route.js'
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 dotenv.config();
 mongoose.connect(process.env.mongo).then(()=>{
     console.log('Connected to MongoDB!!')
@@ -19,6 +20,7 @@ app.use(cors({
 }));
 // 🟢 Important: Parse incoming JSON
 app.use(express.json());
+app.use(cookieParser());
 app.listen(3000,()=>{
     console.log('server is running on port 3000!')
 })//express server is running on 3000
