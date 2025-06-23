@@ -27,6 +27,8 @@ export default function OAuth() {
            })
            const data=await res.json();
            dispatch(signInSuccess(data));
+           console.log('🧾 Saved user in Redux:', data);
+
            navigate('/');
              
         }catch(error){
