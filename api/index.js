@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import usertRouter from './routes/user.route.js'
 import authRouter from './routes/auth.route.js'
+import listingRouter from './routes/listing.route.js'
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 dotenv.config();
@@ -30,6 +31,7 @@ app.get('/',(req,res)=>{
 // create seperate folder for apis as it becomes clumsy here
 app.use('/api/user',usertRouter);
 app.use('/api/auth',authRouter);
+app.use('/api/listing',listingRouter);
 //middleware
 app.use((err, req, res, next) => {
     const statusCode = err.statusCode || 500;
