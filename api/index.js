@@ -42,3 +42,42 @@ app.use((err, req, res, next) => {
       message,
     });
   });
+  // Add to your existing Express server file
+import jwt from 'jsonwebtoken';
+
+// Add this route to your existing routes
+app.post('/api/create-supabase-token', async (req, res) => {
+  try {
+    const { firebaseUid, email } = req.body;
+
+    if (!firebaseUid) {
+      return res.status(400).json({ error: 'Firebase UID required' });
+    }
+
+    // Create Supabase JWT payload
+    const payload = {
+      aud: 'authenticated',
+      exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24), // 24 hours
+      iat: Math.floor(Date.now() / 1000),
+      iss: 'supabase',
+      sub: firebaseUid,
+      email: email || '',
+      role: 'authenticated',
+      user_metadata: {
+        firebase_uid: firebaseUid
+      }
+    };
+
+    // Sign JWT with Supabase secret
+    const token = jwt.sign(payload, process.env.SUPABASE_JWT_SECRET);
+
+    res.json({ 
+      access_token: token,
+      expires_in: 86400
+    });
+
+  } catch (error) {
+    console.error('Token creation error:', error);
+    res.status(500).json({ error: 'Failed to create token' });
+  }
+});

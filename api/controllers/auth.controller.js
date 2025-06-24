@@ -41,50 +41,55 @@ export const signin=async(req,res,next)=>{
 
     }
 };
-export const google =async(req,res,next)=>{
-    try{
-        //check if user exits
-        //console.log('Incoming Google user:', req.body);
+export const google = async (req, res, next) => {
+  try {
+    const { email, name, photo } = req.body;
 
-        const user=await User.findOne({email:req.body.email});
-        if(user){
-            const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
+    if (!email || !name || !photo) {
+      return res.status(400).json({ success: false, message: 'Missing fields' });
+    }
+
+    let user = await User.findOne({ email });
+
+    if (user) {
+      const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+        expiresIn: '7d',
+      });
+
       const { password: pass, ...rest } = user._doc;
-      res
-        .cookie('access_token', token, { httpOnly: true })
+      return res
+        .cookie('access_token', token, { httpOnly: true, sameSite: 'Strict' })
         .status(200)
         .json(rest);
-        }
-        else{
-            //generate password
-            const generatedPassword =
-            Math.random().toString(36).slice(-8) +
-            Math.random().toString(36).slice(-8);
-            const hashedPassword = bcryptjs.hashSync(generatedPassword, 10);
-             const newUser = new User({
-            username:
-            req.body.name.split(' ').join('').toLowerCase() +
-            Math.random().toString(36).slice(-4),
-            email: req.body.email,
-            password: hashedPassword,
-            avatar: req.body.photo,
-             });
-      await newUser.save();//saves newuser to  mongodb
-      const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET);
-      //assigns a ison web token
-      const { password: pass, ...rest } = newUser._doc;
-      res
-        .cookie('access_token', token, { httpOnly: true })
-        .status(200)
-        .json(rest);
-        //sends user data without password as a response
+    }
 
-        }
-    }
-    catch(error){
-        next(error);
-    }
-}
+    // Generate a secure password since Supabase handles auth
+    const generatedPassword =
+      Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
+    const hashedPassword = bcryptjs.hashSync(generatedPassword, 10);
+
+    const newUser = new User({
+      username: name.split(' ').join('').toLowerCase() + Math.random().toString(36).slice(-4),
+      email,
+      password: hashedPassword,
+      avatar: photo,
+    });
+
+    await newUser.save();
+
+    const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, {
+      expiresIn: '7d',
+    });
+
+    const { password: _, ...rest } = newUser._doc;
+    res
+      .cookie('access_token', token, { httpOnly: true, sameSite: 'Strict' })
+      .status(200)
+      .json(rest);
+  } catch (error) {
+    next(error);
+  }
+};
 export const signOut=async(req,res,next)=>{
     try{
         res.clearCookie('access_token');

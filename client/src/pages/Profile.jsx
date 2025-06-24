@@ -23,7 +23,17 @@ export default function Profile() {
   const [formData, setFormData] = useState({});
   const [updateSuccess, setUpdateSuccess] = useState(false);
 
-  // Initialize formData properly when currentUser is available
+  // Fetch Supabase user for Google login info (fallback if Redux not populated)
+  const [supabaseUser, setSupabaseUser] = useState(null);
+
+  useEffect(() => {
+    const fetchSupabaseUser = async () => {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (user) setSupabaseUser(user);
+    };
+    fetchSupabaseUser();
+  }, []);
+
   useEffect(() => {
     if (currentUser) {
       setFormData({
@@ -31,14 +41,19 @@ export default function Profile() {
         email: currentUser.email || '',
         avatar: currentUser.avatar || '',
       });
+    } else if (supabaseUser) {
+      setFormData({
+        username: supabaseUser.user_metadata?.full_name || '',
+        email: supabaseUser.email || '',
+        avatar: supabaseUser.user_metadata?.avatar_url || supabaseUser.user_metadata?.picture || '',
+      });
     }
-  }, [currentUser]);
+  }, [currentUser, supabaseUser]);
 
   useEffect(() => {
     if (file) {
       handleFileUpload(file);
     }
-    // eslint-disable-next-line
   }, [file]);
 
   const handleFileUpload = async (file) => {
@@ -46,8 +61,7 @@ export default function Profile() {
       setFileUploadError(false);
       setFilePerc(0);
       const fileName = `${Date.now()}-${file.name}`;
-      
-      // Upload to Supabase Storage
+
       const { data, error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(fileName, file);
@@ -57,29 +71,29 @@ export default function Profile() {
         return;
       }
 
-      // Get the public URL
       const { data: urlData, error: urlError } = await supabase.storage
         .from('avatars')
         .getPublicUrl(fileName);
 
-      if (urlError || !urlData || !urlData.publicUrl) {
+      if (urlError || !urlData?.publicUrl) {
         setFileUploadError(true);
         return;
       }
 
       setFilePerc(100);
       setFormData((prev) => ({ ...prev, avatar: urlData.publicUrl }));
-      
-      // Update the user in database immediately after upload
-      const updateRes = await fetch(`/api/user/update/${currentUser._id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formData, avatar: urlData.publicUrl }),
-      });
-      
-      if (updateRes.ok) {
-        const updatedUser = await updateRes.json();
-        dispatch(updateUserSuccess(updatedUser));
+
+      if (currentUser?._id) {
+        const updateRes = await fetch(`/api/user/update/${currentUser._id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...formData, avatar: urlData.publicUrl }),
+        });
+
+        if (updateRes.ok) {
+          const updatedUser = await updateRes.json();
+          dispatch(updateUserSuccess(updatedUser));
+        }
       }
     } catch (err) {
       setFileUploadError(true);
@@ -93,6 +107,7 @@ export default function Profile() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      if (!currentUser?._id) return;
       dispatch(updateUserStart());
       const res = await fetch(`/api/user/update/${currentUser._id}`, {
         method: 'POST',
@@ -113,6 +128,7 @@ export default function Profile() {
 
   const handleDeleteUser = async () => {
     try {
+      if (!currentUser?._id) return;
       dispatch(deleteUserStart());
       const res = await fetch(`/api/user/delete/${currentUser._id}`, {
         method: 'DELETE',
@@ -138,23 +154,15 @@ export default function Profile() {
         return;
       }
       dispatch(deleteUserSuccess(data));
+      await supabase.auth.signOut(); // Also sign out from Supabase
     } catch (error) {
       dispatch(deleteUserFailure(error.message));
     }
   };
 
-  // Show loading if no current user
-  if (!currentUser) {
-    return <div className="p-3 max-w-lg mx-auto">Loading user...</div>;
-  }
-
-  // Get the current avatar URL with proper fallback
   const getAvatarUrl = () => {
     if (formData.avatar && formData.avatar.trim() !== '') {
       return formData.avatar;
-    }
-    if (currentUser?.avatar && currentUser.avatar.trim() !== '') {
-      return currentUser.avatar;
     }
     return '/default-avatar.png';
   };
@@ -175,15 +183,13 @@ export default function Profile() {
           src={getAvatarUrl()}
           alt='profile'
           className='rounded-full h-24 w-24 object-cover cursor-pointer self-center mt-2'
-          onError={(e) => { 
-            e.target.src = '/default-avatar.png'; 
+          onError={(e) => {
+            e.target.src = '/default-avatar.png';
           }}
         />
         <p className='text-sm self-center'>
           {fileUploadError ? (
-            <span className='text-red-700'>
-              Error uploading image (must be less than 2 MB)
-            </span>
+            <span className='text-red-700'>Error uploading image</span>
           ) : filePerc > 0 && filePerc < 100 ? (
             <span className='text-slate-700'>{`Uploading ${filePerc}%`}</span>
           ) : filePerc === 100 ? (
