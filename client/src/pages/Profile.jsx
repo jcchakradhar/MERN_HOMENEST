@@ -17,23 +17,28 @@ export default function Profile() {
   const dispatch = useDispatch();
   const { currentUser, loading, error } = useSelector((state) => state.user);
 
-  const [file, setFile] = useState(undefined);
+  const [formData, setFormData] = useState({
+    username: '',
+    email: '',
+    avatar: '',
+  });
+  const [supabaseUser, setSupabaseUser] = useState(null);
+  const [file, setFile] = useState(null);
   const [filePerc, setFilePerc] = useState(0);
   const [fileUploadError, setFileUploadError] = useState(false);
-  const [formData, setFormData] = useState({});
   const [updateSuccess, setUpdateSuccess] = useState(false);
 
-  // Fetch Supabase user for Google login info (fallback if Redux not populated)
-  const [supabaseUser, setSupabaseUser] = useState(null);
-
+  // ✅ 1. Get Supabase user
   useEffect(() => {
     const fetchSupabaseUser = async () => {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (user) setSupabaseUser(user);
+      const { data, error } = await supabase.auth.getUser();
+      if (error) console.error('❌ Supabase auth error:', error.message);
+      else setSupabaseUser(data.user);
     };
     fetchSupabaseUser();
   }, []);
 
+  // ✅ 2. Set user data into form
   useEffect(() => {
     if (currentUser) {
       setFormData({
@@ -45,75 +50,71 @@ export default function Profile() {
       setFormData({
         username: supabaseUser.user_metadata?.full_name || '',
         email: supabaseUser.email || '',
-        avatar: supabaseUser.user_metadata?.avatar_url || supabaseUser.user_metadata?.picture || '',
+        avatar: supabaseUser.user_metadata?.avatar_url || '',
       });
     }
   }, [currentUser, supabaseUser]);
 
+  // ✅ 3. Handle file upload
   useEffect(() => {
-    if (file) {
-      handleFileUpload(file);
-    }
-  }, [file]);
+    if (!file) return;
 
-  const handleFileUpload = async (file) => {
-    try {
+    const upload = async () => {
       setFileUploadError(false);
-      setFilePerc(0);
       const fileName = `${Date.now()}-${file.name}`;
 
-      const { data, error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(fileName, file);
 
-      if (uploadError) {
-        setFileUploadError(true);
-        return;
-      }
+      if (uploadError) return setFileUploadError(true);
 
-      const { data: urlData, error: urlError } = await supabase.storage
+      const { data: urlData } = await supabase.storage
         .from('avatars')
         .getPublicUrl(fileName);
 
-      if (urlError || !urlData?.publicUrl) {
-        setFileUploadError(true);
-        return;
-      }
+      if (!urlData?.publicUrl) return setFileUploadError(true);
 
       setFilePerc(100);
-      setFormData((prev) => ({ ...prev, avatar: urlData.publicUrl }));
+      const newAvatarUrl = urlData.publicUrl;
+      setFormData((prev) => ({ ...prev, avatar: newAvatarUrl }));
 
       if (currentUser?._id) {
-        const updateRes = await fetch(`/api/user/update/${currentUser._id}`, {
+        const res = await fetch(`/api/user/update/${currentUser._id}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...formData, avatar: urlData.publicUrl }),
+          credentials: 'include',
+          body: JSON.stringify({ ...formData, avatar: newAvatarUrl }),
         });
 
-        if (updateRes.ok) {
-          const updatedUser = await updateRes.json();
+        if (res.ok) {
+          const updatedUser = await res.json();
           dispatch(updateUserSuccess(updatedUser));
         }
       }
-    } catch (err) {
-      setFileUploadError(true);
-    }
-  };
+    };
 
+    upload();
+  }, [file]);
+
+  // ✅ 4. Handle input change
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.id]: e.target.value });
+    setFormData((prev) => ({ ...prev, [e.target.id]: e.target.value }));
   };
 
+  // ✅ 5. Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!currentUser?._id) return;
     try {
-      if (!currentUser?._id) return;
       dispatch(updateUserStart());
       const res = await fetch(`/api/user/update/${currentUser._id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(formData),
       });
+
       const data = await res.json();
       if (data.success === false) {
         dispatch(updateUserFailure(data.message));
@@ -121,17 +122,39 @@ export default function Profile() {
       }
       dispatch(updateUserSuccess(data));
       setUpdateSuccess(true);
-    } catch (error) {
-      dispatch(updateUserFailure(error.message));
+    } catch (err) {
+      dispatch(updateUserFailure(err.message));
     }
   };
 
+  // ✅ 6. Delete user
   const handleDeleteUser = async () => {
+    if (!currentUser?._id) return;
     try {
-      if (!currentUser?._id) return;
       dispatch(deleteUserStart());
       const res = await fetch(`/api/user/delete/${currentUser._id}`, {
         method: 'DELETE',
+        credentials: 'include',
+      });
+
+      const data = await res.json();
+      if (data.success === false) {
+        dispatch(deleteUserFailure(data.message));
+        return;
+      }
+      dispatch(deleteUserSuccess(data));
+    } catch (err) {
+      dispatch(deleteUserFailure(err.message));
+    }
+  };
+
+  // ✅ 7. Sign out
+  const handleSignOut = async () => {
+    try {
+      dispatch(signOutUserStart());
+      await supabase.auth.signOut();
+      const res = await fetch('/api/auth/signout', {
+        credentials: 'include',
       });
       const data = await res.json();
       if (data.success === false) {
@@ -139,116 +162,93 @@ export default function Profile() {
         return;
       }
       dispatch(deleteUserSuccess(data));
-    } catch (error) {
-      dispatch(deleteUserFailure(error.message));
+    } catch (err) {
+      dispatch(deleteUserFailure(err.message));
     }
   };
 
-  const handleSignOut = async () => {
-    try {
-      dispatch(signOutUserStart());
-      const res = await fetch('/api/auth/signout');
-      const data = await res.json();
-      if (data.success === false) {
-        dispatch(deleteUserFailure(data.message));
-        return;
-      }
-      dispatch(deleteUserSuccess(data));
-      await supabase.auth.signOut(); // Also sign out from Supabase
-    } catch (error) {
-      dispatch(deleteUserFailure(error.message));
-    }
-  };
-
-  const getAvatarUrl = () => {
-    if (formData.avatar && formData.avatar.trim() !== '') {
-      return formData.avatar;
-    }
-    return '/default-avatar.png';
-  };
+  // ✅ 8. Fallback for profile image
+  const getAvatarUrl = () =>
+    formData.avatar?.trim() ? formData.avatar : '/default-avatar.png';
 
   return (
     <div className='p-3 max-w-lg mx-auto'>
       <h1 className='text-3xl font-semibold text-center my-7'>Profile</h1>
       <form onSubmit={handleSubmit} className='flex flex-col gap-4'>
         <input
-          onChange={(e) => setFile(e.target.files[0])}
           type='file'
           ref={fileRef}
           hidden
           accept='image/*'
+          onChange={(e) => setFile(e.target.files[0])}
         />
         <img
           onClick={() => fileRef.current.click()}
           src={getAvatarUrl()}
           alt='profile'
           className='rounded-full h-24 w-24 object-cover cursor-pointer self-center mt-2'
-          onError={(e) => {
-            e.target.src = '/default-avatar.png';
-          }}
+          onError={(e) => (e.target.src = '/default-avatar.png')}
         />
         <p className='text-sm self-center'>
-          {fileUploadError ? (
-            <span className='text-red-700'>Error uploading image</span>
-          ) : filePerc > 0 && filePerc < 100 ? (
-            <span className='text-slate-700'>{`Uploading ${filePerc}%`}</span>
-          ) : filePerc === 100 ? (
-            <span className='text-green-700'>Image successfully uploaded!</span>
-          ) : (
-            ''
-          )}
+          {fileUploadError
+            ? '❌ Image upload failed'
+            : filePerc === 100
+            ? '✅ Upload successful!'
+            : filePerc > 0
+            ? `Uploading ${filePerc}%`
+            : ''}
         </p>
+
         <input
           type='text'
-          placeholder='username'
-          value={formData.username || ''}
+          placeholder='Username'
           id='username'
-          className='border p-3 rounded-lg'
+          value={formData.username}
           onChange={handleChange}
+          className='border p-3 rounded-lg'
         />
         <input
           type='email'
-          placeholder='email'
+          placeholder='Email'
           id='email'
-          value={formData.email || ''}
-          className='border p-3 rounded-lg'
+          value={formData.email}
           onChange={handleChange}
+          className='border p-3 rounded-lg'
         />
         <input
           type='password'
-          placeholder='password'
-          onChange={handleChange}
+          placeholder='New Password'
           id='password'
+          onChange={handleChange}
           className='border p-3 rounded-lg'
         />
+
         <button
           disabled={loading}
           className='bg-slate-700 text-white rounded-lg p-3 uppercase hover:opacity-95 disabled:opacity-80'
         >
-          {loading ? 'Loading...' : 'Update'}
+          {loading ? 'Updating...' : 'Update'}
         </button>
+
         <Link
+          to='/create-listing'
           className='bg-green-700 text-white p-3 rounded-lg uppercase text-center hover:opacity-95'
-          to={'/create-listing'}
         >
           Create Listing
         </Link>
       </form>
+
       <div className='flex justify-between mt-5'>
-        <span
-          onClick={handleDeleteUser}
-          className='text-red-700 cursor-pointer'
-        >
+        <span onClick={handleDeleteUser} className='text-red-700 cursor-pointer'>
           Delete account
         </span>
         <span onClick={handleSignOut} className='text-red-700 cursor-pointer'>
           Sign out
         </span>
       </div>
-      <p className='text-red-700 mt-5'>{error ? error : ''}</p>
-      <p className='text-green-700 mt-5'>
-        {updateSuccess ? 'User is updated successfully!' : ''}
-      </p>
+
+      {error && <p className='text-red-700 mt-5'>{error}</p>}
+      {updateSuccess && <p className='text-green-700 mt-5'>✅ Profile updated!</p>}
     </div>
   );
 }

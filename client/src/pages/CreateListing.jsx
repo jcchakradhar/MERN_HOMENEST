@@ -1,4 +1,4 @@
-/*import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
@@ -7,6 +7,7 @@ export default function CreateListing() {
   const { currentUser } = useSelector((state) => state.user);
   const navigate = useNavigate();
   const [files, setFiles] = useState([]);
+  const [supabaseUser, setSupabaseUser] = useState(null); // Add this state
   const [formData, setFormData] = useState({
     imageUrls: [],
     name: '',
@@ -27,9 +28,24 @@ export default function CreateListing() {
   const [loading, setLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
-  console.log(formData);
+  // Get current Supabase user on component mount
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error) {
+        console.error('Error getting user:', error);
+        setError('Authentication error. Please log in again.');
+        return;
+      }
+      setSupabaseUser(user);
+      console.log('Supabase user:', user);
+    };
+    
+    getCurrentUser();
+  }, []);
 
-  const handleImageSubmit = (e) => {
+  // Upload images to Supabase Storage and get public URLs
+  const handleImageSubmit = async (e) => {
     if (files.length > 0 && files.length + formData.imageUrls.length < 7) {
       setUploading(true);
       setImageUploadError(false);
@@ -39,135 +55,90 @@ export default function CreateListing() {
       for (let i = 0; i < files.length; i++) {
         promises.push(storeImage(files[i], i));
       }
-      Promise.all(promises)
-        .then((urls) => {
-          setFormData({
-            ...formData,
-            imageUrls: formData.imageUrls.concat(urls),
-          });
-          setImageUploadError(false);
-          setUploading(false);
-          setUploadProgress(0);
-        })
-        .catch((err) => {
-        console.error('Upload error:', err);
+      try {
+        const urls = await Promise.all(promises);
+        setFormData((prev) => ({
+          ...prev,
+          imageUrls: prev.imageUrls.concat(urls),
+        }));
+        setImageUploadError(false);
+      } catch (err) {
         setImageUploadError(`Image upload failed: ${err.message}`);
-        setUploading(false);
-        setUploadProgress(0);
-        });
+      }
+      setUploading(false);
+      setUploadProgress(0);
     } else {
       setImageUploadError('You can only upload 6 images per listing');
       setUploading(false);
     }
   };
 
+  // Store a single image in Supabase Storage
   const storeImage = async (file, index) => {
-    return new Promise(async (resolve, reject) => {
-      try {
-        // Check file size (2MB limit)
-        if (file.size > 2 * 1024 * 1024) {
-          reject(new Error('File size must be less than 2MB'));
-          return;
-        }
-
-        const fileName = `listings/${Date.now()}-${index}-${file.name}`;
-        
-        // Upload to Supabase Storage
-        const { data, error: uploadError } = await supabase.storage
-          .from('listing-images')
-          .upload(fileName, file, {
-            cacheControl: '3600',
-            //upsert: false
-          });
-          console.log("Uploading as user:", (await supabase.auth.getUser()).data?.user);
-          const { data: { user }, error } = await supabase.auth.getUser();
-        console.log(user); // this should be a non-null user object
-
-        if (uploadError) {
-          console.error('Supabase upload error:', uploadError);
-          reject(uploadError);
-          return;
-        }
-
-        // Get the public URL
-        const { data: urlData, error: urlError } = await supabase.storage
-          .from('listing-images')
-          .getPublicUrl(fileName);
-
-        if (urlError || !urlData || !urlData.publicUrl) {
-          console.error('URL generation error:', urlError);
-          reject(new Error('Failed to get image URL'));
-          return;
-        }
-
-        // Update progress (approximate)
-        setUploadProgress(prev => Math.min(prev + (100 / files.length), 100));
-        
-        resolve(urlData.publicUrl);
-      } catch (error) {
-        console.error('Store image error:', error);
-        reject(error);
-      }
-    });
+    if (file.size > 2 * 1024 * 1024) {
+      throw new Error('File size must be less than 2MB');
+    }
+    const fileName = `listings/${Date.now()}-${index}-${file.name}`;
+    const { data, error: uploadError } = await supabase.storage
+      .from('listing-images')
+      .upload(fileName, file);
+    if (uploadError) {
+      throw uploadError;
+    }
+    const { data: urlData, error: urlError } = await supabase.storage
+      .from('listing-images')
+      .getPublicUrl(fileName);
+    if (urlError || !urlData?.publicUrl) {
+      throw new Error('Failed to get image URL');
+    }
+    setUploadProgress((prev) => Math.min(prev + (100 / files.length), 100));
+    return urlData.publicUrl;
   };
 
+  // Remove an image from Supabase Storage and local state
   const handleRemoveImage = async (index) => {
     const imageUrl = formData.imageUrls[index];
-    
-    // Extract filename from URL to delete from Supabase
     try {
-      const urlParts = imageUrl.split('/');
-      const fileName = urlParts[urlParts.length - 1];
-      
-      // Delete from Supabase storage
-      await supabase.storage
-        .from('listing-images')
-        .remove([`listings/${fileName}`]);
+      const fileName = imageUrl.split('/').slice(-2).join('/'); // 'listings/filename'
+      await supabase.storage.from('listing-images').remove([fileName]);
     } catch (error) {
       console.error('Error deleting image from storage:', error);
     }
-
-    // Remove from local state
-    setFormData({
-      ...formData,
-      imageUrls: formData.imageUrls.filter((_, i) => i !== index),
-    });
+    setFormData((prev) => ({
+      ...prev,
+      imageUrls: prev.imageUrls.filter((_, i) => i !== index),
+    }));
   };
 
+  // Handle form field changes
   const handleChange = (e) => {
     if (e.target.id === 'sale' || e.target.id === 'rent') {
-      setFormData({
-        ...formData,
-        type: e.target.id,
-      });
-    }
-
-    if (
+      setFormData({ ...formData, type: e.target.id });
+    } else if (
       e.target.id === 'parking' ||
       e.target.id === 'furnished' ||
       e.target.id === 'offer'
     ) {
-      setFormData({
-        ...formData,
-        [e.target.id]: e.target.checked,
-      });
-    }
-
-    if (
+      setFormData({ ...formData, [e.target.id]: e.target.checked });
+    } else if (
       e.target.type === 'number' ||
       e.target.type === 'text' ||
       e.target.type === 'textarea'
     ) {
-      setFormData({
-        ...formData,
-        [e.target.id]: e.target.value,
-      });
+      setFormData({ ...formData, [e.target.id]: e.target.value });
     }
   };
 
+  // Submit the listing to Supabase (direct insert)
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      // Check if user is authenticated
+      if (!supabaseUser) {
+        setError('You must be logged in to create a listing');
+        return;
+      }
+
       if (formData.imageUrls.length < 1)
         return setError('You must upload at least one image');
       if (+formData.regularPrice < +formData.discountPrice)
@@ -175,32 +146,46 @@ export default function CreateListing() {
       
       setLoading(true);
       setError(false);
-      
-      const res = await fetch('/api/listing/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...formData,
-          userRef: currentUser._id,
-        }),
-      });
-      
-      const data = await res.json();
+
+      // Insert listing into Supabase with proper user ID
+      const { data, error: insertError } = await supabase
+        .from('listings')
+        .insert([
+          {
+            ...formData,
+            userref: supabaseUser.id, // Use Supabase auth user ID
+          },
+        ])
+        .select()
+        .single();
+
       setLoading(false);
-      
-      if (data.success === false) {
-        setError(data.message);
+
+      if (insertError) {
+        setError(insertError.message);
+        console.error('Insert error:', insertError);
         return;
       }
       
-      navigate(`/listing/${data._id}`);
+      console.log('Listing created successfully:', data);
+      //navigate(`/listing/${data.id}`);
     } catch (error) {
       setError(error.message);
       setLoading(false);
+      console.error('Submit error:', error);
     }
   };
+
+  // Show loading state while getting user
+  if (!supabaseUser) {
+    return (
+      <main className='p-3 max-w-4xl mx-auto'>
+        <div className='text-center'>
+          <p>Loading user authentication...</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className='p-3 max-w-4xl mx-auto'>
@@ -350,7 +335,7 @@ export default function CreateListing() {
                 <div className='flex flex-col items-center'>
                   <p>Discounted price</p>
                   {formData.type === 'rent' && (
-                    <span className='text-xs'>($ / month)</span>
+                    <span className='text-xs'>(Rs / month)</span>
                   )}
                 </div>
               </div>
@@ -382,20 +367,17 @@ export default function CreateListing() {
               {uploading ? 'Uploading...' : 'Upload'}
             </button>
           </div>
-          
           {uploading && uploadProgress > 0 && (
             <div className='w-full bg-gray-200 rounded-full h-2'>
-              <div 
+              <div
                 className='bg-green-600 h-2 rounded-full transition-all duration-300'
                 style={{ width: `${uploadProgress}%` }}
               ></div>
             </div>
           )}
-          
           <p className='text-red-700 text-sm'>
             {imageUploadError && imageUploadError}
           </p>
-          
           {formData.imageUrls.length > 0 &&
             formData.imageUrls.map((url, index) => (
               <div
@@ -427,90 +409,4 @@ export default function CreateListing() {
       </form>
     </main>
   );
-}*/
-// In your listing component
-import React, { useState } from 'react';
-import { uploadService } from '../services/uploadService';
-import { supabase } from '../supabase';
-
-const ListingUpload = () => {
-  const [uploading, setUploading] = useState(false);
-  const [images, setImages] = useState([]);
-
-  const handleFileUpload = async (e) => {
-    const files = Array.from(e.target.files);
-    if (files.length === 0) return;
-
-    // ✅ Check Supabase user
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      alert('Please log in first');
-      return;
-    }
-
-    setUploading(true);
-
-    try {
-      const uploadPromises = files.map(file => uploadService.uploadImage(file));
-      const results = await Promise.all(uploadPromises);
-      
-      setImages(prev => [...prev, ...results]);
-      alert('Images uploaded successfully!');
-      
-    } catch (error) {
-      console.error('Upload failed:', error);
-      alert('Upload failed: ' + error.message);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleDelete = async (imagePath, index) => {
-    try {
-      await uploadService.deleteImage(imagePath);
-      setImages(prev => prev.filter((_, i) => i !== index));
-      alert('Image deleted successfully!');
-    } catch (error) {
-      alert('Delete failed: ' + error.message);
-    }
-  };
-
-  return (
-    <div className="p-4">
-      <div className="mb-4">
-        <input
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={handleFileUpload}
-          disabled={uploading}
-          className="mb-2"
-        />
-        {uploading && <p className="text-blue-600">Uploading...</p>}
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        {images.map((image, index) => (
-          <div key={index} className="relative">
-            <img
-              src={image.url}
-              alt={`Upload ${index + 1}`}
-              className="w-full h-32 object-cover rounded"
-            />
-            <button
-              onClick={() => handleDelete(image.path, index)}
-              className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm"
-            >
-              ×
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-export default ListingUpload;
+}
