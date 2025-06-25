@@ -425,61 +425,69 @@ export default function Profile() {
       )}
 
       {/* Listings Display at Bottom */}
-      {!listingsLoading && hasClickedShowListings && userListings.length > 0 && (
-        <div className='mt-8'>
-          <h2 className='text-xl font-semibold mb-4'>My Listings ({userListings.length})</h2>
-          <div className="space-y-4">
-            {userListings.map((listing) => (
-              <div key={listing.id} className='bg-white border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow'>
-                <div className="flex gap-4">
-                  {/* Image */}
-                  {listing.imageUrls && listing.imageUrls[0] && (
-                    <img 
-                      src={listing.imageUrls[0]} 
-                      alt={listing.name || listing.title}
-                      className="w-20 h-20 object-cover rounded"
-                      onError={(e) => e.target.src = '/default-property.png'}
-                    />
-                  )}
-                  
-                  {/* Content */}
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-lg">{listing.name || listing.title || 'Untitled'}</h3>
-                    <p className="text-gray-600 text-sm mb-2">{listing.description || 'No description'}</p>
-                    <p className="text-gray-500 text-sm mb-2">{listing.address}</p>
-                    
-                    <div className="flex justify-between items-center mb-3">
-                      <span className="text-green-600 font-semibold">
-                        ₹{(listing.regularPrice || 0).toLocaleString()} 
-                        {listing.type === 'rent' ? '/month' : ''}
-                      </span>
-                      <div className="text-sm text-gray-500">
-                        {listing.bedrooms} bed • {listing.bathrooms} bath
-                      </div>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex gap-2">
-                      <Link
-                        to={`/update-listing/${listing.id}`}
-                        className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm font-medium transition-colors"
-                      >
-                        Edit
-                      </Link>
-                      <button
-                        onClick={() => handleDeleteListing(listing.id)}
-                        className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm font-medium transition-colors"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
+      {/* Listings Display at Bottom */}
+{!listingsLoading && hasClickedShowListings && userListings.length > 0 && (
+  <div className='mt-8'>
+    <h2 className='text-xl font-semibold mb-4'>My Listings ({userListings.length})</h2>
+    <div className="space-y-4">
+      {userListings.map((listing) => (
+        <div key={listing.id} className='bg-white border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow'>
+          <div className="flex gap-4">
+            {/* Image */}
+            {listing.imageUrls && listing.imageUrls[0] && (
+              <img 
+                src={listing.imageUrls[0]} 
+                alt={listing.name || listing.title}
+                className="w-20 h-20 object-cover rounded"
+                onError={(e) => e.target.src = '/default-property.png'}
+              />
+            )}
+            
+            {/* Content */}
+            <div className="flex-1">
+              <h3 className="font-semibold text-lg">{listing.name || listing.title || 'Untitled'}</h3>
+              <p className="text-gray-600 text-sm mb-2">{listing.description || 'No description'}</p>
+              <p className="text-gray-500 text-sm mb-2">{listing.address}</p>
+              
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-green-600 font-semibold">
+                  ₹{(listing.regularPrice || 0).toLocaleString()} 
+                  {listing.type === 'rent' ? '/month' : ''}
+                </span>
+                <div className="text-sm text-gray-500">
+                  {listing.bedrooms} bed • {listing.bathrooms} bath
                 </div>
               </div>
-            ))}
+
+              {/* Action Buttons */}
+              <div className="flex gap-2">
+                <Link
+                  to={`/listing/${listing.id}`}
+                  className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm font-medium transition-colors"
+                >
+                  View
+                </Link>
+                <Link
+                  to={`/update-listing/${listing.id}`}
+                  className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm font-medium transition-colors"
+                >
+                  Edit
+                </Link>
+                <button
+                  onClick={() => handleDeleteListing(listing.id)}
+                  className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm font-medium transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      )}
+      ))}
+    </div>
+  </div>
+)}
+
 
       {/* No Listings Message */}
       {!listingsLoading && hasClickedShowListings && userListings.length === 0 && showListingsError === '' && (

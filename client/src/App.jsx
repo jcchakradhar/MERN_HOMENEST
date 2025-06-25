@@ -11,6 +11,7 @@ import CreateListing from "./pages/CreateListing";
 import AuthCallback from './pages/AuthCallback';
 import { supabase } from "./supabase"; // ✅ import your supabase client
 import UpdateListing from "./pages/UpdateListing";
+import Listing from "./pages/Listing";
 
 export default function App() {
   useEffect(() => {
@@ -40,7 +41,7 @@ export default function App() {
           <Route path="/create-listing" element={<CreateListing />} />
           <Route path="/update-listing/:id" element={<UpdateListing />} />
         </Route>
-        
+        <Route path="/listing/:id" element={<Listing />} />
       </Routes>
     </BrowserRouter>
   );
