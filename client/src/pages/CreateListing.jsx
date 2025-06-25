@@ -168,7 +168,7 @@ export default function CreateListing() {
       }
       
       console.log('Listing created successfully:', data);
-      //navigate(`/listing/${data.id}`);
+      navigate(`/listing/${data.id}`);
     } catch (error) {
       setError(error.message);
       setLoading(false);
