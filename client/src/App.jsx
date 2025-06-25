@@ -10,6 +10,7 @@ import PrivateRoute from "./components/PrivateRoute";
 import CreateListing from "./pages/CreateListing";
 import AuthCallback from './pages/AuthCallback';
 import { supabase } from "./supabase"; // ✅ import your supabase client
+import UpdateListing from "./pages/UpdateListing";
 
 export default function App() {
   useEffect(() => {
@@ -37,7 +38,9 @@ export default function App() {
         <Route path="/profile" element={<Profile />} />
         <Route element={<PrivateRoute />}>
           <Route path="/create-listing" element={<CreateListing />} />
+          <Route path="/update-listing/:id" element={<UpdateListing />} />
         </Route>
+        
       </Routes>
     </BrowserRouter>
   );
