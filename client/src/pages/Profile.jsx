@@ -1,5 +1,5 @@
 import { useSelector, useDispatch } from 'react-redux';
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabase';
 import {
   updateUserStart,
@@ -35,109 +35,164 @@ export default function Profile() {
   const [showListingsError, setShowListingsError] = useState('');
   const [listingsLoading, setListingsLoading] = useState(false);
   const [hasClickedShowListings, setHasClickedShowListings] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [userDataLoaded, setUserDataLoaded] = useState(false); // ✅ Track if data is loaded
 
   // Helper function to get auth headers
-  const getAuthHeaders = async () => {
+  const getAuthHeaders = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
     return {
       'Content-Type': 'application/json',
       ...(session?.access_token && { 'Authorization': `Bearer ${session.access_token}` }),
     };
-  };
+  }, []);
 
-  // 1. Get Supabase user session on mount and on auth change
+  // 1. ✅ FIXED: Get Supabase user session ONLY on mount
   useEffect(() => {
+    let mounted = true;
+    
     const fetchSupabaseUser = async () => {
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (sessionData?.session?.user) {
-        setSupabaseUser(sessionData.session.user);
-      } else {
-        setSupabaseUser(null);
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (mounted) {
+          if (sessionData?.session?.user) {
+            setSupabaseUser(sessionData.session.user);
+          } else {
+            setSupabaseUser(null);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user:', error);
       }
     };
+    
     fetchSupabaseUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user) setSupabaseUser(session.user);
-      else setSupabaseUser(null);
+      if (mounted) {
+        if (session?.user) {
+          setSupabaseUser(session.user);
+        } else {
+          setSupabaseUser(null);
+        }
+      }
     });
-    return () => subscription.unsubscribe();
-  }, []);
 
-  // 2. Set user data into form when user changes
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []); // ✅ Empty dependency array
+
+  // 2. ✅ FIXED: Set user data ONLY when user changes AND data not loaded
   useEffect(() => {
-    if (currentUser) {
+    if (userDataLoaded) return; // ✅ Prevent re-loading
+
+    if (currentUser && !isUploading) {
       setFormData({
         username: currentUser.username || '',
         email: currentUser.email || '',
         avatar: currentUser.avatar || '',
         password: '',
       });
-    } else if (supabaseUser) {
+      setUserDataLoaded(true); // ✅ Mark as loaded
+    } else if (supabaseUser && !isUploading) {
       setFormData({
         username: supabaseUser.user_metadata?.full_name || '',
         email: supabaseUser.email || '',
         avatar: supabaseUser.user_metadata?.avatar_url || '',
         password: '',
       });
+      setUserDataLoaded(true); // ✅ Mark as loaded
     }
-  }, [currentUser, supabaseUser]);
+  }, [currentUser?.id, supabaseUser?.id, isUploading, userDataLoaded]);
 
-  // 3. Handle file upload
+  // 3. ✅ FIXED: Handle file upload with proper cleanup
   useEffect(() => {
-    if (!file) return;
+    if (!file || isUploading) return;
+
+    let mounted = true;
 
     const upload = async () => {
+      if (!mounted) return;
+      
+      setIsUploading(true);
       setFileUploadError(false);
       setFilePerc(0);
-      const fileName = `${Date.now()}-${file.name}`;
+      
+      try {
+        const fileName = `${Date.now()}-${file.name}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(fileName, file);
+        const { error: uploadError } = await supabase.storage
+          .from('avatars')
+          .upload(fileName, file);
 
-      if (uploadError) {
-        setFileUploadError(true);
-        return;
-      }
+        if (uploadError || !mounted) {
+          if (mounted) setFileUploadError(true);
+          return;
+        }
 
-      const { data: urlData } = await supabase.storage
-        .from('avatars')
-        .getPublicUrl(fileName);
+        const { data: urlData } = await supabase.storage
+          .from('avatars')
+          .getPublicUrl(fileName);
 
-      if (!urlData?.publicUrl) {
-        setFileUploadError(true);
-        return;
-      }
+        if (!urlData?.publicUrl || !mounted) {
+          if (mounted) setFileUploadError(true);
+          return;
+        }
 
-      setFilePerc(100);
-      const newAvatarUrl = urlData.publicUrl;
-      setFormData((prev) => ({ ...prev, avatar: newAvatarUrl }));
+        if (mounted) {
+          setFilePerc(100);
+          const newAvatarUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+          
+          setFormData((prev) => ({ ...prev, avatar: newAvatarUrl }));
 
-      // Update user avatar on backend
-      const userId = supabaseUser?.id;
-      if (userId) {
-        try {
-          const headers = await getAuthHeaders();
-          const res = await fetch(`/api/user/update/${userId}`, {
-            method: 'POST',
-            headers,
-            credentials: 'include',
-            body: JSON.stringify({ ...formData, avatar: newAvatarUrl }),
-          });
+          // Update user avatar on backend
+          const userId = supabaseUser?.id;
+          if (userId) {
+            try {
+              const headers = await getAuthHeaders();
+              const res = await fetch(`/api/user/update/${userId}`, {
+                method: 'POST',
+                headers,
+                credentials: 'include',
+                body: JSON.stringify({ 
+                  username: formData.username,
+                  email: formData.email,
+                  avatar: newAvatarUrl 
+                }),
+              });
 
-          if (res.ok) {
-            const updatedUser = await res.json();
-            dispatch(updateUserSuccess(updatedUser));
+              if (res.ok && mounted) {
+                const updatedUser = await res.json();
+                dispatch(updateUserSuccess(updatedUser));
+              }
+            } catch (e) {
+              if (mounted) setFileUploadError(true);
+            }
           }
-        } catch (e) {
-          setFileUploadError(true);
+        }
+      } catch (error) {
+        if (mounted) setFileUploadError(true);
+      } finally {
+        if (mounted) {
+          setIsUploading(false);
+          setFile(null); // ✅ Clear file to prevent re-upload
+          
+          // Clear success message after 3 seconds
+          setTimeout(() => {
+            if (mounted) setFilePerc(0);
+          }, 3000);
         }
       }
     };
 
     upload();
-  }, [file]);
+
+    return () => {
+      mounted = false;
+    };
+  }, [file]); // ✅ Only depend on file
 
   // 4. Handle input change
   const handleChange = (e) => {
@@ -174,6 +229,9 @@ export default function Profile() {
       const data = await res.json();
       dispatch(updateUserSuccess(data));
       setUpdateSuccess(true);
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => setUpdateSuccess(false), 3000);
     } catch (err) {
       dispatch(updateUserFailure(err.message));
     }
@@ -290,7 +348,7 @@ export default function Profile() {
       });
 
       if (res.ok) {
-        setUserListings(userListings.filter(listing => listing.id !== listingId));
+        setUserListings(prev => prev.filter(listing => listing.id !== listingId));
         console.log('✅ Listing deleted successfully');
       } else {
         console.error('❌ Failed to delete listing');
@@ -300,13 +358,13 @@ export default function Profile() {
     }
   };
 
-  // 10. Fallback for profile image
-  const getAvatarUrl = () => {
+  // 10. ✅ FIXED: Stable avatar URL function
+  const getAvatarUrl = useCallback(() => {
     if (formData.avatar?.trim()) return formData.avatar;
     if (currentUser?.avatar?.trim()) return currentUser.avatar;
     if (supabaseUser?.user_metadata?.avatar_url?.trim()) return supabaseUser.user_metadata.avatar_url;
     return '/default-avatar.png';
-  };
+  }, [formData.avatar, currentUser?.avatar, supabaseUser?.user_metadata?.avatar_url]);
 
   // 11. If not authenticated, show message
   if (!currentUser && !supabaseUser) {
@@ -362,23 +420,29 @@ export default function Profile() {
                       />
                       <div className="relative inline-block">
                         <img
-                          onClick={() => fileRef.current.click()}
+                          onClick={() => !isUploading && fileRef.current.click()}
                           src={getAvatarUrl()}
                           alt='profile'
-                          className='rounded-full h-32 w-32 object-cover cursor-pointer border-4 border-emerald-200 hover:border-emerald-400 transition-all shadow-lg'
+                          className={`rounded-full h-32 w-32 object-cover cursor-pointer border-4 border-emerald-200 hover:border-emerald-400 transition-all shadow-lg ${isUploading ? 'opacity-50' : ''}`}
                           onError={(e) => (e.target.src = '/default-avatar.png')}
                         />
-                        <div className="absolute bottom-2 right-2 bg-emerald-500 p-2 rounded-full cursor-pointer hover:bg-emerald-600 transition-colors"
-                             onClick={() => fileRef.current.click()}>
-                          <Camera className="text-white" size={16} />
+                        <div 
+                          className={`absolute bottom-2 right-2 bg-emerald-500 p-2 rounded-full cursor-pointer hover:bg-emerald-600 transition-colors ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          onClick={() => !isUploading && fileRef.current.click()}
+                        >
+                          {isUploading ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                          ) : (
+                            <Camera className="text-white" size={16} />
+                          )}
                         </div>
                       </div>
                       <div className='mt-4 text-sm'>
                         {fileUploadError ? (
                           <p className="text-red-600 bg-red-50 px-3 py-2 rounded-lg">❌ Image upload failed</p>
-                        ) : filePerc === 100 ? (
+                        ) : filePerc === 100 && !isUploading ? (
                           <p className="text-green-600 bg-green-50 px-3 py-2 rounded-lg">✅ Upload successful!</p>
-                        ) : filePerc > 0 ? (
+                        ) : filePerc > 0 && isUploading ? (
                           <div className="bg-emerald-50 px-3 py-2 rounded-lg">
                             <p className="text-emerald-600 mb-2">Uploading {filePerc}%</p>
                             <div className="w-full bg-emerald-200 rounded-full h-2">
@@ -394,10 +458,10 @@ export default function Profile() {
                     {/* Form Fields */}
                     <div className="grid md:grid-cols-2 gap-6">
                       <div>
-                        <label className="text-sm font-medium text-emerald-800 mb-2 flex items-center">
+                        <div className="text-sm font-medium text-emerald-800 mb-2 flex items-center">
                           <User className="mr-2" size={16} />
                           Username
-                        </label>
+                        </div>
                         <input
                           type='text'
                           placeholder='Username'
@@ -409,10 +473,10 @@ export default function Profile() {
                       </div>
                       
                       <div>
-                        <label className="text-sm font-medium text-emerald-800 mb-2 flex items-center">
+                        <div className="text-sm font-medium text-emerald-800 mb-2 flex items-center">
                           <span className="mr-2">📧</span>
                           Email
-                        </label>
+                        </div>
                         <input
                           type='email'
                           placeholder='Email'
@@ -425,10 +489,10 @@ export default function Profile() {
                     </div>
 
                     <div>
-                      <label className="text-sm font-medium text-emerald-800 mb-2 flex items-center">
+                      <div className="text-sm font-medium text-emerald-800 mb-2 flex items-center">
                         <span className="mr-2">🔒</span>
                         New Password
-                      </label>
+                      </div>
                       <input
                         type='password'
                         placeholder='New Password (leave blank to keep current)'
@@ -440,7 +504,7 @@ export default function Profile() {
                     </div>
 
                     <button
-                      disabled={loading}
+                      disabled={loading || isUploading}
                       className='w-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white p-4 rounded-xl font-semibold hover:from-emerald-600 hover:to-teal-600 transition-all disabled:opacity-50 shadow-lg flex items-center justify-center gap-2'
                     >
                       {loading ? (
@@ -522,27 +586,6 @@ export default function Profile() {
                       <Trash2 size={20} />
                       Delete Account
                     </button>
-                  </div>
-                </div>
-
-                {/* User Stats */}
-                <div className="bg-gradient-to-r from-amber-50 to-orange-50 p-6 rounded-2xl border border-amber-200">
-                  <h3 className="text-xl font-semibold text-amber-800 mb-4 flex items-center">
-                    <span className="mr-2">📊</span>
-                    Your Stats
-                  </h3>
-                  
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-amber-700">Total Listings:</span>
-                      <span className="font-bold text-amber-800">{userListings.length}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-amber-700">Member Since:</span>
-                      <span className="font-bold text-amber-800">
-                        {supabaseUser?.created_at ? new Date(supabaseUser.created_at).getFullYear() : 'N/A'}
-                      </span>
-                    </div>
                   </div>
                 </div>
               </div>
