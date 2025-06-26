@@ -33,9 +33,9 @@ app.get('/health', (req, res) => {
 });
 
 // ✅ Root test
-app.get('/', (req, res) => {
+/*app.get('/', (req, res) => {
   res.send('Hello JC - HomeNest backend is live!');
-});
+});*/
 
 // ✅ API routes
 app.use('/api/user', usertRouter);
