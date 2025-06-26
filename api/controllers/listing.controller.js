@@ -118,3 +118,67 @@ export const getListing = async (req, res, next) => {
     next(error);
   }
 };
+export const getListings=async(req,res,next)=>{
+    try {
+    const limit = parseInt(req.query.limit) || 9;
+    const startIndex = parseInt(req.query.startIndex) || 0;
+    
+    // Build Supabase query
+    let query = supabase
+      .from('listings')
+      .select('*');
+
+    // Handle search term
+    const searchTerm = req.query.searchTerm || '';
+    if (searchTerm) {
+      query = query.ilike('name', `%${searchTerm}%`);
+    }
+
+    // Handle offer filter
+    let offer = req.query.offer;
+    if (offer !== undefined && offer !== 'false') {
+      const offerValue = offer === 'true';
+      query = query.eq('offer', offerValue);
+    }
+
+    // Handle furnished filter
+    let furnished = req.query.furnished;
+    if (furnished !== undefined && furnished !== 'false') {
+      const furnishedValue = furnished === 'true';
+      query = query.eq('furnished', furnishedValue);
+    }
+
+    // Handle parking filter
+    let parking = req.query.parking;
+    if (parking !== undefined && parking !== 'false') {
+      const parkingValue = parking === 'true';
+      query = query.eq('parking', parkingValue);
+    }
+
+    // Handle type filter
+    let type = req.query.type;
+    if (type !== undefined && type !== 'all') {
+      query = query.eq('type', type);
+    }
+
+    // Handle sorting
+    const sort = req.query.sort || 'created_at';
+    const order = req.query.order || 'desc';
+    const ascending = order === 'asc';
+    query = query.order(sort, { ascending });
+
+    // Handle pagination
+    query = query.range(startIndex, startIndex + limit - 1);
+
+    // Execute query
+    const { data: listings, error } = await query;
+
+    if (error) {
+      return next(errorHandler(500, error.message));
+    }
+
+    return res.status(200).json(listings || []);
+  } catch (error) {
+    next(error);
+  }
+}

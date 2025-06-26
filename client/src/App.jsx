@@ -12,6 +12,7 @@ import AuthCallback from './pages/AuthCallback';
 import { supabase } from "./supabase"; // ✅ import your supabase client
 import UpdateListing from "./pages/UpdateListing";
 import Listing from "./pages/Listing";
+import Search from "./pages/Search";
 
 export default function App() {
   useEffect(() => {
@@ -42,6 +43,7 @@ export default function App() {
           <Route path="/update-listing/:id" element={<UpdateListing />} />
         </Route>
         <Route path="/listing/:id" element={<Listing />} />
+        <Route path='/search' element={<Search/>}/>
       </Routes>
     </BrowserRouter>
   );
