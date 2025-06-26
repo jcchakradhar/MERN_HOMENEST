@@ -72,7 +72,7 @@ export default function Header() {
         <Link to='/' className="flex-shrink-0">
           <h1 className="font-bold text-xl sm:text-2xl flex items-center">
             <span className="text-white drop-shadow-lg">🏡 Home</span>
-            <span className="text-emerald-100 drop-shadow-lg">Nest</span>
+            <span className="text-emerald-100 drop-shadow-lg"> Connect</span>
           </h1>
         </Link>
 
